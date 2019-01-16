@@ -171,11 +171,11 @@ def main():
         points_sampled = pts_fts_sampled
     points_augmented = pf.augment(points_sampled, xforms, jitter_range)
 
+    # here is the architecture
     net = model.Net(points=points_augmented, features=features_augmented, is_training=is_training, setting=setting)
     logits = net.logits
     probs = tf.nn.softmax(logits, name='probs')
     predictions = tf.argmax(probs, axis=-1, name='predictions')
-
     labels_2d = tf.expand_dims(labels, axis=-1, name='labels_2d')
     labels_tile = tf.tile(labels_2d, (1, tf.shape(logits)[1]), name='labels_tile')
     loss_op = tf.losses.sparse_softmax_cross_entropy(labels=labels_tile, logits=logits)

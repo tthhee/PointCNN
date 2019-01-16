@@ -17,7 +17,7 @@ num_class = 40
 
 sample_num = 1024
 
-batch_size = 128
+batch_size = 4
 
 num_epochs = 1024
 
@@ -45,6 +45,11 @@ sample_num_clip = 1 // 4
 
 x = 3
 
+# K : the neighborhood size
+# D : the dilation rate
+# P : the representative point number
+# C : the output channel number
+# links : tell the current layer to receive inputs from the previous layers.
 xconv_param_name = ('K', 'D', 'P', 'C', 'links')
 xconv_params = [dict(zip(xconv_param_name, xconv_param)) for xconv_param in
                 [(8, 1, -1, 16 * x, []),

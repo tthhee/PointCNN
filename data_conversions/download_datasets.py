@@ -73,7 +73,7 @@ def download_and_unzip(url, root, dataset):
         os.makedirs(folder_zips)
     filename_zip = os.path.join(folder_zips, url.split('/')[-1])
 
-    download_from_url(url, filename_zip)
+#    download_from_url(url, filename_zip)
 
     if filename_zip.endswith('.zip'):
         zip_ref = zipfile.ZipFile(filename_zip, 'r')

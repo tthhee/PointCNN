@@ -4,7 +4,7 @@ from __future__ import print_function
 
 import os
 import h5py
-import plyfile
+from utils import plyfile
 import numpy as np
 from matplotlib import cm
 

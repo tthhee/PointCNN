@@ -9,8 +9,8 @@ import tensorflow as tf
 
 def xconv(pts, fts, qrs, tag, N, K, D, P, C, C_pts_fts, is_training, with_X_transformation, depth_multiplier,
           sorting_method=None, with_global=False):
-    _, indices_dilated = pf.knn_indices_general(qrs, pts, K * D, True)
-    indices = indices_dilated[:, :, ::D, :]
+    _, indices_dilated = pf.knn_indices_general(qrs, pts, K * D, True) # (N, P, K * D, 2)
+    indices = indices_dilated[:, :, ::D, :] # select K elements with step D -> (N, P, K, 2)
 
     if sorting_method is not None:
         indices = pf.sort_points(pts, indices, sorting_method)
@@ -30,8 +30,8 @@ def xconv(pts, fts, qrs, tag, N, K, D, P, C, C_pts_fts, is_training, with_X_tran
 
     if with_X_transformation:
         ######################## X-transformation #########################
-        X_0 = pf.conv2d(nn_pts_local, K * K, tag + 'X_0', is_training, (1, K))
-        X_0_KK = tf.reshape(X_0, (N, P, K, K), name=tag + 'X_0_KK')
+        X_0 = pf.conv2d(nn_pts_local, K * K, tag + 'X_0', is_training, (1, K)) # -> N x P x K*K
+        X_0_KK = tf.reshape(X_0, (N, P, K, K), name=tag + 'X_0_KK') # -> N x P x K x K
         X_1 = pf.depthwise_conv2d(X_0_KK, K, tag + 'X_1', is_training, (1, K))
         X_1_KK = tf.reshape(X_1, (N, P, K, K), name=tag + 'X_1_KK')
         X_2 = pf.depthwise_conv2d(X_1_KK, K, tag + 'X_2', is_training, (1, K), activation=None)
@@ -41,8 +41,8 @@ def xconv(pts, fts, qrs, tag, N, K, D, P, C, C_pts_fts, is_training, with_X_tran
     else:
         fts_X = nn_fts_input
 
-    fts_conv = pf.separable_conv2d(fts_X, C, tag + 'fts_conv', is_training, (1, K), depth_multiplier=depth_multiplier)
-    fts_conv_3d = tf.squeeze(fts_conv, axis=2, name=tag + 'fts_conv_3d')
+    fts_conv = pf.separable_conv2d(fts_X, C, tag + 'fts_conv', is_training, (1, K), depth_multiplier=depth_multiplier) 
+    fts_conv_3d = tf.squeeze(fts_conv, axis=2, name=tag + 'fts_conv_3d') # N x P x C2
 
     if with_global:
         fts_global_0 = pf.dense(qrs, C // 4, tag + 'fts_global_0', is_training)
@@ -67,6 +67,8 @@ class PointCNN:
         if features is None:
             self.layer_fts = [features]
         else:
+            # expand feature dimentions
+            # each point(N) has some features(-1 need to be inferred) and each feature has (setting.data_dim - 3) dimensions;
             features = tf.reshape(features, (N, -1, setting.data_dim - 3), name='features_reshape')
             C_fts = xconv_params[0]['C'] // 2
             features_hd = pf.dense(features, C_fts, 'features_hd', is_training)
@@ -74,29 +76,37 @@ class PointCNN:
 
         for layer_idx, layer_param in enumerate(xconv_params):
             tag = 'xconv_' + str(layer_idx + 1) + '_'
-            K = layer_param['K']
-            D = layer_param['D']
-            P = layer_param['P']
-            C = layer_param['C']
+            K = layer_param['K'] # neighborhood size
+            D = layer_param['D'] # dilate rate
+            P = layer_param['P'] # representative point number
+            C = layer_param['C'] # output channel number
             links = layer_param['links']
             if setting.sampling != 'random' and links:
                 print('Error: flexible links are supported only when random sampling is used!')
                 exit()
 
             # get k-nearest points
-            pts = self.layer_pts[-1]
+            pts = self.layer_pts[-1] # get the end one in list (last layer)
             fts = self.layer_fts[-1]
+            # if P == -1 at first layer or p equals to last layer's p , than no sampling
             if P == -1 or (layer_idx > 0 and P == xconv_params[layer_idx - 1]['P']):
                 qrs = self.layer_pts[-1]
             else:
+                # for segmentation task
                 if setting.sampling == 'fps':
+                    # fps_indices: [[0_0, 0_1, ...., 0_P-1], ...., [N-1_0, N-1_1, ...., N-1_P-1]]
                     fps_indices = tf_sampling.farthest_point_sample(P, pts)
-                    batch_indices = tf.tile(tf.reshape(tf.range(N), (-1, 1, 1)), (1, P, 1))
+                    # replicating a index(0...N) for each output poit(P) -> (N, P, 1)
+                    # batch_indices: [[[0],[0],...,[0]], ..., [[N-1],[N-1],...,[N-1]]]
+                    batch_indices = tf.tile(tf.reshape(tf.range(N), (-1, 1, 1)), (1, P, 1)) 
+                    # tf.expand_dims(fps_indices, -1): [[[0_0], [0_1], ..., [0_P-1]], ... , [[N-1_0], [N-1_1], ... , [N-1_P-1]]]
+                    # indices: [[[0, 0_0], [0, 0_1], ..., [0, 0_P-1]], ..., [[N-1, N-1_0], [N-1, N-1_1], ... , [N-1, N-1_P-1]]]
                     indices = tf.concat([batch_indices, tf.expand_dims(fps_indices,-1)], axis=-1)
                     qrs = tf.gather_nd(pts, indices, name= tag + 'qrs') # (N, P, 3)
                 elif setting.sampling == 'ids':
                     indices = pf.inverse_density_sampling(pts, K, P)
                     qrs = tf.gather_nd(pts, indices)
+                # for classification tasks
                 elif setting.sampling == 'random':
                     qrs = tf.slice(pts, (0, 0, 0), (-1, P, -1), name=tag + 'qrs')  # (N, P, 3)
                 else:
@@ -105,16 +115,19 @@ class PointCNN:
             self.layer_pts.append(qrs)
 
             if layer_idx == 0:
+                # lift each point coordinates into C_pts_fts dimensional space
                 C_pts_fts = C // 2 if fts is None else C // 4
                 depth_multiplier = 4
             else:
                 C_prev = xconv_params[layer_idx - 1]['C']
                 C_pts_fts = C_prev // 4
                 depth_multiplier = math.ceil(C / C_prev)
+            # with global feature at last layer
             with_global = (setting.with_global and layer_idx == len(xconv_params) - 1)
             fts_xconv = xconv(pts, fts, qrs, tag, N, K, D, P, C, C_pts_fts, is_training, with_X_transformation,
                               depth_multiplier, sorting_method, with_global)
             fts_list = []
+            # receive inputs from previous layers
             for link in links:
                 fts_from_link = self.layer_fts[link]
                 if fts_from_link is not None:

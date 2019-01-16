@@ -6,7 +6,7 @@ import math
 import random
 import numpy as np
 import tensorflow as tf
-from transforms3d.euler import euler2mat
+from utils.transforms3d.euler import euler2mat
 
 
 # the returned indices will be used by tf.gather_nd
@@ -120,10 +120,10 @@ def batch_distance_matrix(A):
 # A shape is (N, P_A, C), B shape is (N, P_B, C)
 # D shape is (N, P_A, P_B)
 def batch_distance_matrix_general(A, B):
-    r_A = tf.reduce_sum(A * A, axis=2, keep_dims=True)
+    r_A = tf.reduce_sum(A * A, axis=2, keep_dims=True) # x^2 + y^2 + z^2
     r_B = tf.reduce_sum(B * B, axis=2, keep_dims=True)
     m = tf.matmul(A, tf.transpose(B, perm=(0, 2, 1)))
-    D = r_A - 2 * m + tf.transpose(r_B, perm=(0, 2, 1))
+    D = r_A - 2 * m + tf.transpose(r_B, perm=(0, 2, 1)) # distance (A - B)^2
     return D
 
 
@@ -161,7 +161,7 @@ def knn_indices(points, k, sort=True, unique=True):
 
 # return shape is (N, P, K, 2)
 def knn_indices_general(queries, points, k, sort=True, unique=True):
-    queries_shape = tf.shape(queries)
+    queries_shape = tf.shape(queries) # N x P x 3
     batch_size = queries_shape[0]
     point_num = queries_shape[1]
 
@@ -169,8 +169,8 @@ def knn_indices_general(queries, points, k, sort=True, unique=True):
     if unique:
         prepare_for_unique_top_k(D, points)
     distances, point_indices = tf.nn.top_k(-D, k=k, sorted=sort)  # (N, P, K)
-    batch_indices = tf.tile(tf.reshape(tf.range(batch_size), (-1, 1, 1, 1)), (1, point_num, k, 1))
-    indices = tf.concat([batch_indices, tf.expand_dims(point_indices, axis=3)], axis=3)
+    batch_indices = tf.tile(tf.reshape(tf.range(batch_size), (-1, 1, 1, 1)), (1, point_num, k, 1)) # (N, P, K, 1)
+    indices = tf.concat([batch_indices, tf.expand_dims(point_indices, axis=3)], axis=3) #(N, P, K, 2)
     return -distances, indices
 
 
