@@ -34,14 +34,14 @@ def xconv(pts, fts, qrs, tag, N, K, D, P, C, C_pts_fts, is_training, with_X_tran
         X_0_KK = tf.reshape(X_0, (N, P, K, K), name=tag + 'X_0_KK') # -> N x P x K x K
         X_1 = pf.depthwise_conv2d(X_0_KK, K, tag + 'X_1', is_training, (1, K))
         X_1_KK = tf.reshape(X_1, (N, P, K, K), name=tag + 'X_1_KK')
-        X_2 = pf.depthwise_conv2d(X_1_KK, K, tag + 'X_2', is_training, (1, K), activation=None)
+        X_2 = pf.depthwise_conv2d(X_1_KK, K, tag + 'X_2', is_training, (1, K), activation=None) # without pointwise convolution
         X_2_KK = tf.reshape(X_2, (N, P, K, K), name=tag + 'X_2_KK')
         fts_X = tf.matmul(X_2_KK, nn_fts_input, name=tag + 'fts_X')
         ###################################################################
     else:
         fts_X = nn_fts_input
 
-    fts_conv = pf.separable_conv2d(fts_X, C, tag + 'fts_conv', is_training, (1, K), depth_multiplier=depth_multiplier) 
+    fts_conv = pf.separable_conv2d(fts_X, C, tag + 'fts_conv', is_training, (1, K), depth_multiplier=depth_multiplier) # with pointwise convolution  
     fts_conv_3d = tf.squeeze(fts_conv, axis=2, name=tag + 'fts_conv_3d') # N x P x C2
 
     if with_global:
@@ -68,7 +68,6 @@ class PointCNN:
             self.layer_fts = [features]
         else:
             # expand feature dimentions
-            # each point(N) has some features(-1 need to be inferred) and each feature has (setting.data_dim - 3) dimensions;
             features = tf.reshape(features, (N, -1, setting.data_dim - 3), name='features_reshape')
             C_fts = xconv_params[0]['C'] // 2
             features_hd = pf.dense(features, C_fts, 'features_hd', is_training)
@@ -80,7 +79,7 @@ class PointCNN:
             D = layer_param['D'] # dilate rate
             P = layer_param['P'] # representative point number
             C = layer_param['C'] # output channel number
-            links = layer_param['links']
+            links = layer_param['links'] # e.g. [-1,-2] will tell the current layer to receive inputs from the previous two layers 
             if setting.sampling != 'random' and links:
                 print('Error: flexible links are supported only when random sampling is used!')
                 exit()
@@ -88,13 +87,13 @@ class PointCNN:
             # get k-nearest points
             pts = self.layer_pts[-1] # get the end one in list (last layer)
             fts = self.layer_fts[-1]
-            # if P == -1 at first layer or p equals to last layer's p , than no sampling
+            # if P == -1 or p equals to last layer's p , than no sampling
             if P == -1 or (layer_idx > 0 and P == xconv_params[layer_idx - 1]['P']):
                 qrs = self.layer_pts[-1]
             else:
                 # for segmentation task
                 if setting.sampling == 'fps':
-                    # fps_indices: [[0_0, 0_1, ...., 0_P-1], ...., [N-1_0, N-1_1, ...., N-1_P-1]]
+                    # fps_indices: [[0_0, 0_1, ...., 0_P-1], ...., [N-1_0, N-1_1, ...., N-1_P-1]]   (NxP)
                     fps_indices = tf_sampling.farthest_point_sample(P, pts)
                     # replicating a index(0...N) for each output poit(P) -> (N, P, 1)
                     # batch_indices: [[[0],[0],...,[0]], ..., [[N-1],[N-1],...,[N-1]]]
